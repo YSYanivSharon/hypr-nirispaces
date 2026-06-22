@@ -94,7 +94,7 @@ local function focus_workspace(workspace_number, monitor_name)
     }))
 end
 
---- Focuses on the next monitor
+--- Focuses on the next monitor.
 local function focus_next_monitor()
     hl.dispatch(hl.dsp.focus({ monitor = "+1" }))
 end
@@ -117,10 +117,16 @@ local function move_to_workspace(workspace_number, monitor_name, follow)
     end
 end
 
---- Moves the window to the workspace with the same name on the next monitor
+--- Moves the window to the workspace with the same name on the next monitor.
 ---@param follow boolean|nil If it should also focus the workspace.
 local function move_to_next_monitor(follow)
     hl.dispatch(hl.dsp.window.move({ monitor = "+1", follow = follow }))
+end
+
+--- Gets the active workspace that is currently shown, even if it is a special workspace.
+---@return HL.Workspace The actual active workspace that the user sees.
+local function get_active_visible_workspace()
+    return hl.get_active_special_workspace() or hl.get_active_workspace()
 end
 
 --- Focuses on the specified workspace, or if it is already the active workspace,
@@ -128,7 +134,10 @@ end
 ---@param workspace_number integer The workspace number.
 ---@param or_next_monitor boolean|nil If it should focus to the next monitor when the workspace is already focused.
 function M.focus_workspace(workspace_number, or_next_monitor)
-    if or_next_monitor and get_workspace_number(hl.get_active_workspace()) == workspace_number then
+    if
+        or_next_monitor
+        and get_workspace_number(get_active_visible_workspace()) == workspace_number
+    then
         focus_next_monitor()
     else
         focus_workspace(workspace_number)
@@ -141,7 +150,10 @@ end
 ---@param follow boolean|nil If it should also focus the workspace.
 ---@param or_next_monitor boolean|nil If it should move to the next monitor when the workspace is already focused.
 function M.move_to_workspace(workspace_number, follow, or_next_monitor)
-    if or_next_monitor and get_workspace_number(hl.get_active_workspace()) == workspace_number then
+    if
+        or_next_monitor
+        and get_workspace_number(get_active_visible_workspace()) == workspace_number
+    then
         move_to_next_monitor(follow)
     else
         move_to_workspace(workspace_number, nil, follow)
@@ -189,11 +201,11 @@ end
 --- Enforces the naming invariant: every workspace on a connected monitor whose owner is
 --- gone (or unset) is adopted into that monitor's numbering. Workspaces owned by another
 --- connected monitor are left for hyprland to re-pin.
----@param exclude_name string|nil A monitor name to treat as disconnected.
-local function reconcile(exclude_name)
+---@param removed_monitor HL.Monitor|nil A monitor name to treat as disconnected.
+local function reconcile(removed_monitor)
     local connected = {}
     for _, monitor in ipairs(hl.get_monitors()) do
-        if monitor.name ~= exclude_name then
+        if monitor ~= removed_monitor then
             connected[monitor.name] = true
         end
     end
@@ -233,7 +245,7 @@ end
 --- whichever monitor they were moved to.
 ---@param monitor HL.Monitor The removed monitor.
 local function on_monitor_removed(monitor)
-    reconcile(monitor.name)
+    reconcile(monitor)
 end
 
 --- Handles the event where a workspace is removed by collapsing each monitor's owned,
