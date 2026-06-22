@@ -248,6 +248,12 @@ local function on_monitor_removed(monitor)
     reconcile(monitor)
 end
 
+--- Mirroring a monitor (or reverting) fires no monitor.added/removed event, only this one;
+--- by the time it fires the mirror has left hl.get_monitors(), so reconcile adopts its orphans.
+local function on_monitor_layout_changed()
+    reconcile()
+end
+
 --- Handles the event where a workspace is removed by collapsing each monitor's owned,
 --- non-empty workspaces back to a contiguous 1..n numbering.
 ---@param _ HL.Workspace The removed workspace.
@@ -311,6 +317,7 @@ function M.setup(opts)
 
     hl.on("monitor.added", on_monitor_added)
     hl.on("monitor.removed", on_monitor_removed)
+    hl.on("monitor.layout_changed", on_monitor_layout_changed)
 
     -- Workspace collapsing event handling
     if M.opts.collapse_workspaces then
