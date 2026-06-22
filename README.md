@@ -1,6 +1,6 @@
 # hypr-nirispaces
 
-Niri-style **per-monitor workspaces** for [Hyprland](https://hyprland.org), implemented with
+Niri-style **per-monitor workspaces** and workspace collapse for [Hyprland](https://hyprland.org), implemented with
 Hyprland's native Lua config API
 
 Each managed workspace is named `<number>@<monitor>` (e.g. `1@DP-1`, `2@eDP-1`), so the same
@@ -79,5 +79,10 @@ end
   reconnect.
 
 > **Note:** anything that _displays_ workspace names (waybar, eww, scripts) will see the full
-> name `1@DP-1`, not just `1`. Strip the `@<monitor>` suffix when rendering if you want bare
+> name `1@DP-1`, not just `1`. Strip the `@<monitor>` suffix when rendering if you only want
 > numbers.
+
+## Also check
+
+- <https://github.com/cfyeung-dojjy/hyprland_virtual_desktops_lua> - Inspiration for this
+- <https://github.com/yayuuu/hyprland-scroll-overview> - To complete the hyprland-niri abomination experience
