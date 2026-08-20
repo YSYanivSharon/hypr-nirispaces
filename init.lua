@@ -83,7 +83,7 @@ end
 --- Focuses on the specified workspace.
 ---@param workspace_number integer The workspace number.
 ---@param monitor_name string|nil The name of the monitor.
-local function focus_workspace(workspace_number, monitor_name)
+function M.focus_workspace(workspace_number, monitor_name)
     local fixed_monitor_name = monitor_name or hl.get_monitor_at_cursor().name
     local collapsed_workspace_number = get_collapsed_new_name(workspace_number, fixed_monitor_name)
     hl.dispatch(hl.dsp.focus({
@@ -94,16 +94,11 @@ local function focus_workspace(workspace_number, monitor_name)
     }))
 end
 
---- Focuses on the next monitor.
-local function focus_next_monitor()
-    hl.dispatch(hl.dsp.focus({ monitor = "+1" }))
-end
-
 --- Moves the window to the specified workspace.
 ---@param workspace_number integer The workspace number.
 ---@param monitor_name string|nil The name of the monitor.
 ---@param follow boolean|nil If it should also focus the workspace.
-local function move_to_workspace(workspace_number, monitor_name, follow)
+function M.move_to_workspace(workspace_number, monitor_name, follow)
     local fixed_monitor_name = monitor_name or hl.get_monitor_at_cursor().name
     local collapsed_workspace_number = get_collapsed_new_name(workspace_number, fixed_monitor_name)
     hl.dispatch(hl.dsp.window.move({
@@ -113,51 +108,49 @@ local function move_to_workspace(workspace_number, monitor_name, follow)
         ),
     }))
     if follow then
-        focus_workspace(collapsed_workspace_number, fixed_monitor_name)
+        M.focus_workspace(collapsed_workspace_number, fixed_monitor_name)
     end
 end
 
---- Moves the window to the workspace with the same name on the next monitor.
----@param follow boolean|nil If it should also focus the workspace.
-local function move_to_next_monitor(follow)
-    hl.dispatch(hl.dsp.window.move({ monitor = "+1", follow = follow }))
+--- Focuses the workspace `offset` slots away on the monitor under the cursor.
+--- Clamped at 1 on the low end and, when collapsing, at the trailing empty slot on the
+--- high end; it never wraps around.
+---@param offset integer Signed number of slots to move by.
+function M.focus_relative_workspace(offset)
+    local monitor_name = hl.get_monitor_at_cursor().name
+    local current = get_workspace_number(hl.get_active_workspace(monitor_name)) or 1
+    M.focus_workspace(math.max(current + offset, 1), monitor_name)
 end
 
---- Gets the active workspace that is currently shown, even if it is a special workspace.
----@return HL.Workspace The actual active workspace that the user sees.
-local function get_active_visible_workspace()
-    return hl.get_active_special_workspace() or hl.get_active_workspace()
-end
+--- Builds an `hl.gesture` action that switches workspaces the nirispaces way, configured by
+--- `swipe_threshold` and `swipe_invert`. The step commits when the fingers lift, so
+--- `gestures:workspace_swipe_*` does not apply.
+---@return table action A `start`/`update`/`finish` table for `hl.gesture`.
+function M.workspace_swipe_action()
+    -- M.opts is read in the callbacks, not here: this runs at config load, before setup().
+    local travel = 0
 
---- Focuses on the specified workspace, or if it is already the active workspace,
---- jumps focus to the next available monitor instead.
----@param workspace_number integer The workspace number.
----@param or_next_monitor boolean|nil If it should focus to the next monitor when the workspace is already focused.
-function M.focus_workspace(workspace_number, or_next_monitor)
-    if
-        or_next_monitor
-        and get_workspace_number(get_active_visible_workspace()) == workspace_number
-    then
-        focus_next_monitor()
-    else
-        focus_workspace(workspace_number)
+    local function accumulate(event)
+        travel = travel + event.delta.y
     end
-end
 
---- Moves the window to the specified workspace, or if already
---- on that workspace, moves it to the next available monitor.
----@param workspace_number integer The workspace number to target.
----@param follow boolean|nil If it should also focus the workspace.
----@param or_next_monitor boolean|nil If it should move to the next monitor when the workspace is already focused.
-function M.move_to_workspace(workspace_number, follow, or_next_monitor)
-    if
-        or_next_monitor
-        and get_workspace_number(get_active_visible_workspace()) == workspace_number
-    then
-        move_to_next_monitor(follow)
-    else
-        move_to_workspace(workspace_number, nil, follow)
-    end
+    return {
+        start = function(event)
+            travel = 0
+            accumulate(event)
+        end,
+        update = accumulate,
+        finish = function(event)
+            if event.cancelled or math.abs(travel) < M.opts.swipe_threshold then
+                return
+            end
+            local step = travel < 0 and 1 or -1
+            if not M.opts.swipe_invert then
+                step = -step
+            end
+            M.focus_relative_workspace(step)
+        end,
+    }
 end
 
 --- Registers the workspace rules that route and name a monitor's workspaces.
@@ -282,11 +275,15 @@ end
 ---@class Nirispaces.Opts
 ---@field name_separator string Separator between the workspace number and the monitor name. Must not be `-` or any character that appears in monitor connector names. Default `"@"`.
 ---@field collapse_workspaces boolean Keep each monitor's workspace numbering gap-free (1..n). Default `true`.
+---@field swipe_threshold number Pixels of travel needed for `workspace_swipe_action` to commit a step. Default `150`.
+---@field swipe_invert boolean Swipe up moves to the next workspace. Default `true`.
 
 ---@type Nirispaces.Opts
 local default_opts = {
     name_separator = "@",
     collapse_workspaces = true,
+    swipe_threshold = 150,
+    swipe_invert = true,
 }
 
 local has_setup = false
