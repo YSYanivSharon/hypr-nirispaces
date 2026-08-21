@@ -10,7 +10,8 @@ workspaces collapse to stay gap-free (`1..n`) as they empty.
 
 ## Requirements
 
-- Hyprland 0.55+ (for Lua config support).
+- Hyprland 0.56+ — the Lua config API arrived in 0.55, but writing a workspace's id needs
+  `hl.dsp.workspace.change_id`, added in 0.56.0.
 
 ## Install
 
@@ -27,6 +28,7 @@ Or with options:
 require("hyprland.modules.hypr-nirispaces").setup({
     name_separator = "@",
     collapse_workspaces = true,
+    monitor_workspaces_count = 100,
     swipe_threshold = 150,
     swipe_invert = true,
 })
@@ -36,8 +38,9 @@ require("hyprland.modules.hypr-nirispaces").setup({
 
 | Option                | Type      | Default | Description                                                                                                                            |
 | --------------------- | --------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `name_separator`      | `string`  | `"@"`   | Separator between the workspace number and the monitor name. Must not be `-` or any character that appears in monitor connector names. |
+| `name_separator`      | `string`  | `"@"`   | Separator between the workspace number and the monitor name. Must not be a digit. |
 | `collapse_workspaces` | `boolean` | `true`  | Keep each monitor's workspace numbering gap-free (`1..n`) as workspaces empty.                                                         |
+| `monitor_workspaces_count` | `integer` | `100` | How many workspaces a monitor can hold. Sets the size of the id block each monitor owns, and so also caps how far `focus_relative_workspace` climbs. |
 | `swipe_threshold`     | `number`  | `150`   | Pixels of travel needed for `workspace_swipe_action` to commit a step.                                                                 |
 | `swipe_invert`        | `boolean` | `true`  | Swipe up moves to the next workspace.                                                                                                  |
 
@@ -45,18 +48,22 @@ require("hyprland.modules.hypr-nirispaces").setup({
 
 ### `nirispaces.focus_workspace(number, monitor)`
 
-Focus workspace `number` on `monitor` (defaults to the monitor under the cursor). When
-collapsing, `number` is clamped to the trailing empty slot. Focusing the workspace that is
-already active is a no-op.
+Focus workspace `number` on `monitor` — a connector name (`"DP-1"`) or a Hyprland monitor id
+(`0`), defaulting to the focused monitor when omitted. A `monitor` that matches nothing currently
+connected is a no-op rather than a fall back to the focused monitor, which would act on the wrong
+screen. When collapsing, `number` is clamped to the trailing empty slot. Focusing the workspace
+that is already active is a no-op.
 
 ### `nirispaces.move_to_workspace(number, monitor, follow)`
 
-Move the active window to workspace `number` on `monitor` (defaults to the monitor under the
-cursor). If `follow` is `true`, also focus that workspace.
+Move the active window to workspace `number` on `monitor` — a connector name or a monitor id,
+as above. If `follow` is `true`, also focus that workspace. With no active window the whole call
+is a no-op: Hyprland creates nothing for the window to land in, so the target workspace is not
+opened either.
 
 ### `nirispaces.focus_relative_workspace(offset)`
 
-Focus the workspace `offset` slots away on the current monitor. Clamped at `1` going down and,
+Focus the workspace `offset` slots away on the focused monitor. Clamped at `1` going down and,
 when collapsing, at the trailing empty slot going up — it never wraps around.
 
 ### `nirispaces.workspace_swipe_action()`
@@ -94,15 +101,37 @@ hl.gesture({ fingers = 3, direction = "vertical", action = nirispaces.workspace_
 ```
 
 Do **not** use Hyprland's built-in `action = "workspace"` with this module. That swipe picks its
-target with `m±1`, which orders a monitor's workspaces by workspace _id_. Named workspaces get
-negative ids in creation order, so the swipe order has nothing to do with the numbering you see,
-one direction silently does nothing, and `gestures:workspace_swipe_create_new` creates workspaces
-by numeric id — outside the `<number>@<monitor>` scheme this module's rules depend on.
+target with `m±1`, which steps through the workspaces that already _exist_ on the monitor and
+wraps around at either end — so it can never reach the next empty slot the way
+`focus_relative_workspace` does, and it silently jumps from your last workspace back to your
+first. Turning on `gestures:workspace_swipe_create_new` does not fix it: that creates a workspace
+by raw numeric id, which arrives with a bare numeric name and stays that way until the next
+reconcile renames it.
 
 ## Behavior
 
+- **Names identify, ids are derived** — a workspace's `<number>@<monitor>` name is the only thing
+  the module reads to work out which slot it holds and which monitor owns it. Its id is computed
+  from that slot as `monitor_id * monitor_workspaces_count + workspace_number` and written back,
+  never read. So when the two disagree — a workspace renamed out from under the module, an id
+  Hyprland picked itself — the **name wins**, and the next reconcile rewrites the id to match. A
+  name that does not parse, numbers a slot past `monitor_workspaces_count`, or points at a monitor
+  that is not connected holds no slot at all, and the workspace is adopted into the numbering of
+  the monitor it sits on.
+- **Ids** — every monitor owns the id block
+  `id*monitor_workspaces_count + 1 .. + monitor_workspaces_count`, so with the defaults monitor
+  `0` owns `1..100` and monitor `1` owns `101..200`. Workspaces are created _by id_ and named
+  afterwards, which is the opposite of what the naming scheme suggests, because
+  Hyprland only ever hands **named** workspaces negative ids counting down from `-1337` — in
+  creation order. Anything that orders the workspaces it draws by id (noctalia does) would then
+  render a monitor's bar backwards. A workspace rule routes each block to its monitor. Monitors
+  are compared by id internally; their connector name is used for the workspace rules Hyprland
+  will only accept a name for, and for the text of a workspace name.
 - **Startup / connect** — each monitor's first workspace is named `1@<monitor>` instead of the
-  bare `1` Hyprland would create.
+  bare `1` Hyprland would create. A monitor Hyprland has just connected is handed the next free
+  workspace id — one belonging to an already-connected monitor's block — rather than the id its
+  own `default` rule asks for; the module adopts that workspace into the new monitor's numbering
+  rather than leave it stranded under a name that points at the wrong screen.
 - **Collapse** — with `collapse_workspaces`, per-monitor numbering stays contiguous as
   workspaces are emptied, and focusing past the end lands on the next free slot.
 - **Disconnect** — when a monitor is unplugged, its orphaned workspaces are _merged_ into a
