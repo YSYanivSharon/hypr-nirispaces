@@ -233,6 +233,7 @@ function M.move_to_workspace(workspace_number, monitor_selector, follow)
     -- Nothing is created when there was no window to move (bugs.txt 3).
     local created = hl.get_workspace(workspace_id)
     if created then
+        slot = get_collapsed_workspace_slot(slot)
         assign_workspace_slot(created, slot)
     end
     if follow then
